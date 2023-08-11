@@ -34,8 +34,7 @@ runtime: #in h
     long: 24
     simplejob: 1
 
-# Local directory for temp files, useful for cluster execution without shared file system
-tmpdir: /tmp
+
 # directory where databases are downloaded with 'atlas download'
 database_dir: databases
 
@@ -188,7 +187,7 @@ gunc_database: "progenomes"  # 'progenomes' or 'gtdb'
 
 genome_dereplication:
   ANI: 0.95                     ## Genome dreplication threshold 0.95 is more or less species
-  overlap: 0.2                  # See more on https://drep.readthedocs.io/en/latest/module_descriptions.html
+  overlap: 0.2                  
 
 rename_mags_contigs: true        #Rename contigs of representative MAGs
 

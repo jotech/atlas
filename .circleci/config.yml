@@ -1,6 +1,6 @@
 defaults: &defaults
   docker:
-    - image: continuumio/miniconda3
+    - image: condaforge/mambaforge
   environment:
     DATABASE_DIR: databases
 
@@ -21,10 +21,10 @@ jobs:
       - run:
           name: Setup conda
           command: |
+            conda config --set channel_priority strict
             conda config --add channels bioconda
             conda config --add channels conda-forge
             conda config --set always_yes true
-            conda install -y mamba
       - restore_cache:
           key: atlasenv-d-{{ checksum "atlasenv.yml" }}
       - run:

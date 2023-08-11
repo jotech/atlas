@@ -122,7 +122,6 @@ rule normalize_reads:
         mindepth=config["normalization_minimum_kmer_depth"],
         inputs=lambda wc, input: io_params_for_tadpole(input),
         outputs=lambda wc, output: io_params_for_tadpole(output.reads, key="out"),
-        tmpdir="tmpdir=%s" % TMPDIR if TMPDIR else "",
     log:
         "{sample}/logs/assembly/pre_process/normalization_{previous_steps}.log",
     benchmark:
@@ -136,7 +135,7 @@ rule normalize_reads:
     shell:
         " bbnorm.sh {params.inputs} "
         " {params.outputs} "
-        " {params.tmpdir} "
+        " tmpdir={resources.tmpdir} "
         " tossbadreads=t "
         " hist={output.histin} "
         " histout={output.histout} "
@@ -324,7 +323,7 @@ if config.get("assembler", "megahit") == "megahit":
 
             megahit \
             {params.inputs} \
-            --tmp-dir {TMPDIR} \
+            --tmp-dir {resources.tmpdir} \
             --num-cpu-threads {threads} \
             --k-min {params.k_min} \
             --k-max {params.k_max} \
@@ -492,43 +491,6 @@ rule rename_contigs:
         " minscaf={params.minlength} &> {log} "
 
 
-rule calculate_contigs_stats:
-    input:
-        "{sample}/assembly/{sample}_{assembly_step}_contigs.fasta",
-    output:
-        "{sample}/assembly/contig_stats/{assembly_step}_contig_stats.txt",
-    conda:
-        "../envs/required_packages.yaml"
-    log:
-        "{sample}/logs/assembly/post_process/contig_stats_{assembly_step}.log",
-    threads: 1
-    resources:
-        mem=1,
-        time=config["runtime"]["simplejob"],
-    shell:
-        "stats.sh in={input} format=3 out={output} &> {log}"
-
-
-rule combine_sample_contig_stats:
-    input:
-        expand(
-            "{{sample}}/assembly/contig_stats/{assembly_step}_contig_stats.txt",
-            assembly_step=["prefilter", "final"],
-        ),
-    output:
-        "{sample}/assembly/contig_stats.tsv",
-    run:
-        import os
-        import pandas as pd
-
-        c = pd.DataFrame()
-        for f in input:
-            df = pd.read_csv(f, sep="\t")
-            assembly_step = os.path.basename(f).replace("_contig_stats.txt", "")
-            c.loc[assembly_step]
-
-        c.to_csv(output[0], sep="\t")
-
 
 if config["filter_contigs"]:
 
@@ -640,6 +602,27 @@ rule finalize_contigs:
     threads: 1
     run:
         os.symlink(os.path.relpath(input[0], os.path.dirname(output[0])), output[0])
+
+
+
+
+rule calculate_contigs_stats:
+    input:
+        "{sample}/{sample}_contigs.fasta",
+    output:
+        "{sample}/assembly/contig_stats/final_contig_stats.txt",
+    conda:
+        "../envs/required_packages.yaml"
+    log:
+        "{sample}/logs/assembly/post_process/contig_stats_final.log",
+    threads: 1
+    resources:
+        mem=1,
+        time=config["runtime"]["simplejob"],
+    shell:
+        "stats.sh in={input} format=3 out={output} &> {log}"
+
+
 
 
 # generalized rule so that reads from any "sample" can be aligned to contigs from "sample_contigs"
