@@ -232,7 +232,10 @@ rule index_genecatalog:
     log:
         "logs/Genecatalog/alignment/index.log",
     params:
-        index_size="12G",
+        extra="-I 12G",
+    resources:
+        mem_mb=config["simplejob_mem"] * 1000,
+        java_mem=int(config["simplejob_mem"] * JAVA_MEM_FRACTION),
     wrapper:
         "v1.19.0/bio/minimap2/index"
 
