@@ -4,4 +4,4 @@ channels:
     - pytorch
     - defaults
 dependencies:
-  - vamb>=3.0
+  - vamb=3.0.9
