@@ -50,7 +50,6 @@ if config["genecatalog"]["source"] == "contigs":
             cat_files(input.fna, output.fna)
             cat_files(input.short, output.short)
 
-
 else:
 
     localrules:
@@ -151,7 +150,7 @@ if (config["genecatalog"]["clustermethod"] == "linclust") or (
             "../envs/required_packages.yaml"
         threads: 1
         resources:
-            mem=config["mem"],
+            mem_mb=config["mem"] * 1000,
             java_mem=int(config["mem"] * JAVA_MEM_FRACTION),
         log:
             "logs/Genecatalog/clustering/get_cds_of_proteins.log",
@@ -175,14 +174,14 @@ if (config["genecatalog"]["clustermethod"] == "linclust") or (
             "logs/Genecatalog/clustering/generate_orf_info.log",
         script:
             "../scripts/generate_orf_info.py"
-# cluster genes with cd-hit-est
 
+
+# cluster genes with cd-hit-est
 
 
 elif config["genecatalog"]["clustermethod"] == "cd-hit-est":
 
     include: "cdhit.smk"
-
 
 else:
     raise Exception(
@@ -219,7 +218,7 @@ rule get_genecatalog_seq_info:
         "../envs/required_packages.yaml"
     threads: 1
     resources:
-        mem=config["simplejob_mem"],
+        mem_mb=config["simplejob_mem"] * 1000,
         java_mem=int(config["simplejob_mem"] * JAVA_MEM_FRACTION),
     shell:
         "stats.sh gcformat=4 gc={output} in={input} &> {log}"
@@ -284,7 +283,7 @@ rule pileup_Genecatalog:
         "../envs/required_packages.yaml"
     threads: config["threads"]
     resources:
-        mem=config["mem"],
+        mem_mb=config["mem"] * 1000,
         java_mem=int(config["mem"] * JAVA_MEM_FRACTION),
     shell:
         " pileup.sh "
@@ -305,7 +304,7 @@ rule gene_pileup_as_parquet:
         "Genecatalog/alignments/{sample}_coverage.parquet",
     threads: 1
     resources:
-        mem=config["simplejob_mem"],
+        mem_mb=config["simplejob_mem"] * 1000,
         time_min=config["runtime"]["simplejob"] * 60,
     log:
         "logs/Genecatalog/counts/parse_gene_coverages/{sample}.log",
@@ -369,7 +368,7 @@ rule combine_gene_coverages:
         "../envs/hdf.yaml"
     threads: 1
     resources:
-        mem=config["simplejob_mem"],
+        mem_mb=config["simplejob_mem"] * 1000,
         time_min=get_combine_cov_time(),
     script:
         "../scripts/combine_gene_coverages.py"
@@ -388,7 +387,6 @@ rule combine_gene_coverages:
 old_subset_folder = Path("Genecatalog/subsets/genes")
 new_subset_folder = "Intermediate/genecatalog/subsets"
 if old_subset_folder.exists():
-
     logger.info(f"I move {old_subset_folder} to {new_subset_folder}")
 
     import shutil
@@ -416,7 +414,6 @@ checkpoint gene_subsets:
 
 
 def get_subset_names(wildcards):
-
     dir_for_subsets = Path(checkpoints.gene_subsets.get(**wildcards).output[0])
     subset_names = glob_wildcards(str(dir_for_subsets / "{subset}.faa")).subset
 
@@ -444,7 +441,7 @@ rule eggNOG_homology_search:
         data_dir=EGGNOG_DIR,
         prefix=lambda wc, output: output[0].replace(".emapper.seed_orthologs", ""),
     resources:
-        mem=config["mem"],
+        mem_mb=config["mem"] * 1000,
     threads: config["threads"]
     shadow:
         "minimal"
@@ -461,8 +458,8 @@ rule eggNOG_homology_search:
 
 
 def calculate_mem_eggnog():
-    return 2 * config["simplejob_mem"] + (
-        37 if config["eggNOG_use_virtual_disk"] else 0
+    return 2000 * config["simplejob_mem"] + (
+        37000 if config["eggNOG_use_virtual_disk"] else 0
     )
 
 
@@ -480,7 +477,7 @@ rule eggNOG_annotation:
         copyto_shm="t" if config["eggNOG_use_virtual_disk"] else "f",
     threads: config.get("threads", 1)
     resources:
-        mem=calculate_mem_eggnog(),
+        mem_mb=calculate_mem_eggnog(),
     shadow:
         "minimal"
     conda:
@@ -489,15 +486,24 @@ rule eggNOG_annotation:
         "logs/genecatalog/annotation/eggnog/{subset}_annotate_hits_table.log",
     shell:
         """
+        if [ {params.copyto_shm} == "t" ] ; then
+            # Check if the files exist before copying
+            if [ ! -e "{params.data_dir}/eggnog.db" ]; then
+                cp {EGGNOG_DIR}/eggnog.db {params.data_dir}/eggnog.db 2> {log}
+            else
+                echo "File {params.data_dir}/eggnog.db already exists. Skipping copy." >> {log}
+            fi
 
-        if [ {params.copyto_shm} == "t" ] ;
-        then
-            cp {EGGNOG_DIR}/eggnog.db {params.data_dir}/eggnog.db 2> {log}
-            cp {EGGNOG_DIR}/eggnog_proteins.dmnd {params.data_dir}/eggnog_proteins.dmnd 2>> {log}
+            if [ ! -e "{params.data_dir}/eggnog_proteins.dmnd" ]; then
+                cp {EGGNOG_DIR}/eggnog_proteins.dmnd {params.data_dir}/eggnog_proteins.dmnd 2>> {log}
+            else
+                echo "File {params.data_dir}/eggnog_proteins.dmnd already exists. Skipping copy." >> {log}
+            fi
         fi
 
         emapper.py --annotate_hits_table {input.seed} --no_file_comments \
           --override -o {params.prefix} --cpu {threads} --data_dir {params.data_dir} 2>> {log}
+
         """
 
 
@@ -515,10 +521,9 @@ rule combine_egg_nogg_annotations:
     log:
         "logs/genecatalog/annotation/eggNOG/combine.log",
     resources:
-        time=config["runtime"]["default"],
+        time_min=60 * config["runtime"]["default"],
     run:
         try:
-
             import pandas as pd
 
             Tables = [
@@ -538,7 +543,6 @@ rule combine_egg_nogg_annotations:
 
             combined.to_parquet(output[0], index=False)
         except Exception as e:
-
             import traceback
 
             with open(log[0], "w") as logfile:
@@ -554,7 +558,7 @@ rule convert_eggNOG_tsv2parquet:
     output:
         "Genecatalog/annotations/eggNOG.parquet",
     resources:
-        time=config["runtime"]["default"],
+        time_min=60 * config["runtime"]["default"],
     log:
         "logs/genecatalog/annotation/eggNOG/tsv2parquet.log",
     run:
@@ -566,7 +570,6 @@ rule convert_eggNOG_tsv2parquet:
             df.to_parquet(output[0], index=False)
 
         except Exception as e:
-
             import traceback
 
             with open(log[0], "w") as logfile:
@@ -594,8 +597,8 @@ rule DRAM_annotate_genecatalog:
         genes=temp("Intermediate/genecatalog/annotation/dram/{subset}/genes.faa"),
     threads: config["simplejob_threads"]
     resources:
-        mem=config["simplejob_mem"],
-        time=config["runtime"]["long"],
+        mem_mb=config["simplejob_mem"] * 1000,
+        time_min=60 * config["runtime"]["long"],
     conda:
         "../envs/dram.yaml"
     params:
@@ -618,7 +621,6 @@ rule DRAM_annotate_genecatalog:
 
 
 def combine_genecatalog_dram_input(wildcards):
-
     all_subsets = get_subset_names(wildcards)
 
     return expand(
@@ -632,7 +634,7 @@ rule combine_dram_genecatalog_annotations:
     output:
         directory("Genecatalog/annotations/dram"),
     resources:
-        time=config["runtime"]["default"],
+        time_min=60 * config["runtime"]["default"],
     log:
         "logs/genecatalog/annotation/dram/combine.log",
     script:
@@ -694,7 +696,7 @@ rule gene2genome:
 #     threads:
 #         12
 #     resources:
-#         mem= 220
+#         mem_mb= 220*1000
 #     shell:
 #         """
 #         canopy -i {input} -o {output.cluster} -c {output.profile} -n {threads} --canopy_size_stats_file {log} {params.canopy_params} 2> {log}

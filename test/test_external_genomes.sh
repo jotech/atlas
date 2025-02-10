@@ -12,7 +12,7 @@ MaxMem=3
 databaseDir="test/databases"
 WD='test/genome_quant'
 reads_dir='test/reads/empty'
-
+snakemake_args=" --quiet rules $@ --dryrun " 
 
 echo "touch reads dir"
 mkdir -p $reads_dir
@@ -39,6 +39,14 @@ done
 echo "Init"
 atlas init --db-dir $databaseDir --skip-qc -w $WD $reads_dir
 
-echo "Run"
+echo "Run quantify_genomes"
 
-atlas run None quantify_genomes -w $WD --config genome_dir="other_genomes" --dryrun $@
+atlas run quantify_genomes -w $WD --config genome_dir="other_genomes" $snakemake_args
+
+
+echo "Run strains"
+
+atlas run strains -w $WD --config genome_dir="other_genomes" $snakemake_args
+
+
+rm -rf $WD $reads_dir

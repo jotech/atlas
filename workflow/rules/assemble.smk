@@ -39,9 +39,9 @@ if SKIP_QC & (len(MULTIFILE_FRACTIONS) < 3):
         params:
             inputs=lambda wc, input: io_params_for_tadpole(input, "in"),
             interleaved=(
-                lambda wc: "t"
-                if (config.get("interleaved_fastqs", False) & SKIP_QC)
-                else "f"
+                lambda wc: (
+                    "t" if (config.get("interleaved_fastqs", False) & SKIP_QC) else "f"
+                )
             ),
             outputs=lambda wc, output: io_params_for_tadpole(output, "out"),
             verifypaired="t" if PAIRED_END else "f",
@@ -51,7 +51,7 @@ if SKIP_QC & (len(MULTIFILE_FRACTIONS) < 3):
             "%s/required_packages.yaml" % CONDAENV
         threads: config.get("simplejob_threads", 1)
         resources:
-            mem=config["simplejob_mem"],
+            mem_mb=config["simplejob_mem"] * 1000,
             java_mem=int(config["simplejob_mem"] * JAVA_MEM_FRACTION),
         shell:
             """
@@ -69,7 +69,6 @@ if SKIP_QC & (len(MULTIFILE_FRACTIONS) < 3):
                 pigz=t unpigz=t \
                 -Xmx{resources.java_mem}G 2> {log}
             """
-
 
 else:
 
@@ -94,7 +93,6 @@ else:
             ), "Input and ouput files have not same number, can not create symlinks for all."
             for i in range(len(input)):
                 os.symlink(os.path.abspath(input[i]), output[i])
-
 
 
 
@@ -130,7 +128,7 @@ rule normalize_reads:
         "%s/required_packages.yaml" % CONDAENV
     threads: config.get("threads", 1)
     resources:
-        mem=config["mem"],
+        mem_mb=config["mem"] * 1000,
         java_mem=int(config["mem"] * JAVA_MEM_FRACTION),
     shell:
         " bbnorm.sh {params.inputs} "
@@ -167,7 +165,7 @@ rule error_correction:
     conda:
         "%s/required_packages.yaml" % CONDAENV
     resources:
-        mem=config["mem"],
+        mem_mb=config["mem"] * 1000,
         java_mem=int(config["mem"] * JAVA_MEM_FRACTION),
     params:
         inputs=lambda wc, input: io_params_for_tadpole(input),
@@ -214,7 +212,7 @@ rule merge_pairs:
         ),
     threads: config.get("threads", 1)
     resources:
-        mem=config["mem"],
+        mem_mb=config["mem"] * 1000,
         java_mem=int(config["mem"] * JAVA_MEM_FRACTION),
     conda:
         "%s/required_packages.yaml" % CONDAENV
@@ -273,7 +271,6 @@ if config.get("assembler", "megahit") == "megahit":
         shell:
             "cat {input} > {output}"
 
-
     def megahit_input_parsing(input):
         Nfiles = len(input)
 
@@ -315,8 +312,8 @@ if config.get("assembler", "megahit") == "megahit":
             "../envs/megahit.yaml"
         threads: config["assembly_threads"]
         resources:
-            mem=config["assembly_memory"],
-            time=config["runtime"]["assembly"],
+            mem_mb=config["assembly_memory"] * 1000,
+            time_min=60 * config["runtime"]["assembly"],
         shell:
             """
             rm -r {params.outdir} 2> {log}
@@ -335,7 +332,7 @@ if config.get("assembler", "megahit") == "megahit":
             --merge-level {params.merge_level} \
             --prune-level {params.prune_level} \
             --low-local-ratio {params.low_local_ratio} \
-            --memory {resources.mem}000000000  \
+            --memory {resources.mem_mb}000000  \
             {params.preset} >> {log} 2>&1
             """
 
@@ -349,7 +346,6 @@ if config.get("assembler", "megahit") == "megahit":
             temp("{sample}/assembly/{sample}_raw_contigs.fasta"),
         shell:
             "cp {input} {output}"
-
 
 else:
     if PAIRED_END:
@@ -435,15 +431,16 @@ else:
             "../envs/spades.yaml"
         threads: config["assembly_threads"]
         resources:
-            mem=config["assembly_memory"],
-            time=config["runtime"]["assembly"],
+            mem_mb=config["assembly_memory"] * 1000,
+            mem_gb=config["assembly_memory"],
+            time_min=60 * config["runtime"]["assembly"],
         shell:
             # remove pipeline_state file to create all output files again
             " rm -f {params.p[outdir]}/pipeline_state/stage_*_copy_files 2> {log} ; "
             " "
             "spades.py "
             " --threads {threads} "
-            " --memory {resources.mem} "
+            " --memory {resources.mem_gb} "
             " -o {params.p[outdir]} "
             " -k {params.k}"
             " {params.p[preset]} "
@@ -459,37 +456,35 @@ else:
     rule rename_spades_output:
         input:
             "{{sample}}/assembly/{sequences}.fasta".format(
-            sequences="scaffolds" if config["spades_use_scaffolds"] else "contigs"
+                sequences="scaffolds" if config["spades_use_scaffolds"] else "contigs"
             ),
         output:
             temp("{sample}/assembly/{sample}_raw_contigs.fasta"),
         shell:
             "cp {input} {output}"
-# standardizes header labels within contig FASTAs
 
+
+# standardizes header labels within contig FASTAs
 
 
 rule rename_contigs:
     input:
         "{sample}/assembly/{sample}_raw_contigs.fasta",
     output:
-        "{sample}/assembly/{sample}_prefilter_contigs.fasta",
-    conda:
-        "%s/required_packages.yaml" % CONDAENV
+        fasta="{sample}/assembly/{sample}_prefilter_contigs.fasta",
+        mapping_table="{sample}/assembly/old2new_contig_names.tsv",
     threads: config.get("simplejob_threads", 1)
     resources:
-        mem=config["simplejob_mem"],
-        time=config["runtime"]["simplejob"],
+        mem_mb=config["simplejob_mem"] * 1000,
+        time_min=60 * config["runtime"]["default"],
     log:
         "{sample}/logs/assembly/post_process/rename_and_filter_size.log",
     params:
         minlength=config["minimum_contig_length"],
-    shell:
-        "rename.sh "
-        " in={input} out={output} ow=t "
-        " prefix={wildcards.sample} "
-        " minscaf={params.minlength} &> {log} "
-
+    conda:
+        "../envs/fasta.yaml"
+    script:
+        "../scripts/rename_assembly.py"
 
 
 if config["filter_contigs"]:
@@ -558,7 +553,7 @@ if config["filter_contigs"]:
             "%s/required_packages.yaml" % CONDAENV
         threads: 1
         resources:
-            mem=config["simplejob_mem"],
+            mem_mb=config["simplejob_mem"] * 1000,
             java_mem=int(config["simplejob_mem"] * JAVA_MEM_FRACTION),
         shell:
             """filterbycoverage.sh in={input.fasta} \
@@ -571,8 +566,9 @@ if config["filter_contigs"]:
             minl={params.minl} \
             trim={params.trim} \
             -Xmx{resources.java_mem}G 2> {log}"""
-# HACK: this makes two copies of the same file
 
+
+# HACK: this makes two copies of the same file
 
 
 else:  # no filter
@@ -582,7 +578,7 @@ else:  # no filter
 
     rule do_not_filter_contigs:
         input:
-            rules.rename_contigs.output,
+            "{sample}/assembly/{sample}_prefilter_contigs.fasta",
         output:
             "{sample}/assembly/{sample}_final_contigs.fasta",
         threads: 1
@@ -598,17 +594,15 @@ rule finalize_contigs:
     input:
         "{sample}/assembly/{sample}_final_contigs.fasta",
     output:
-        "{sample}/{sample}_contigs.fasta",
+        "Assembly/fasta/{sample}.fasta",
     threads: 1
-    run:
-        os.symlink(os.path.relpath(input[0], os.path.dirname(output[0])), output[0])
-
-
+    shell:
+        "cp {input} {output}"
 
 
 rule calculate_contigs_stats:
     input:
-        "{sample}/{sample}_contigs.fasta",
+        get_assembly,
     output:
         "{sample}/assembly/contig_stats/final_contig_stats.txt",
     conda:
@@ -617,19 +611,17 @@ rule calculate_contigs_stats:
         "{sample}/logs/assembly/post_process/contig_stats_final.log",
     threads: 1
     resources:
-        mem=1,
-        time=config["runtime"]["simplejob"],
+        mem_mb=1000,
+        time_min=60 * config["runtime"]["simplejob"],
     shell:
         "stats.sh in={input} format=3 out={output} &> {log}"
-
-
 
 
 # generalized rule so that reads from any "sample" can be aligned to contigs from "sample_contigs"
 rule align_reads_to_final_contigs:
     input:
         query=get_quality_controlled_reads,
-        target="{sample_contigs}/{sample_contigs}_contigs.fasta",
+        target="Assembly/fasta/{sample_contigs}.fasta",
     output:
         bam="{sample_contigs}/sequence_alignment/{sample}.bam",
     params:
@@ -648,7 +640,7 @@ rule align_reads_to_final_contigs:
 
 rule pileup_contigs_sample:
     input:
-        fasta="{sample}/{sample}_contigs.fasta",
+        fasta=get_assembly,
         bam="{sample}/sequence_alignment/{sample}.bam",
     output:
         covhist="{sample}/assembly/contig_stats/postfilter_coverage_histogram.txt",
@@ -669,7 +661,7 @@ rule pileup_contigs_sample:
         "%s/required_packages.yaml" % CONDAENV
     threads: config.get("threads", 1)
     resources:
-        mem=config["mem"],
+        mem_mb=config["mem"] * 1000,
         java_mem=int(config["mem"] * JAVA_MEM_FRACTION),
     shell:
         "pileup.sh "
@@ -695,14 +687,14 @@ rule create_bam_index:
         "../envs/required_packages.yaml"
     threads: 1
     resources:
-        mem=2 * config["simplejob_threads"],
+        mem_mb=2 * config["simplejob_threads"] * 1000,
     shell:
         "samtools index {input}"
 
 
 rule predict_genes:
     input:
-        "{sample}/{sample}_contigs.fasta",
+        get_assembly,
     output:
         fna="{sample}/annotation/predicted_genes/{sample}.fna",
         faa="{sample}/annotation/predicted_genes/{sample}.faa",
@@ -715,8 +707,8 @@ rule predict_genes:
         "logs/benchmarks/prodigal/{sample}.txt"
     threads: 1
     resources:
-        mem=config["simplejob_mem"],
-        time=config["runtime"]["simplejob"],
+        mem_mb=config["simplejob_mem"] * 1000,
+        time_min=60 * config["runtime"]["simplejob"],
     shell:
         """
         prodigal -i {input} -o {output.gff} -d {output.fna} \
@@ -769,6 +761,7 @@ rule get_contigs_from_gene_names:
                             )
                         )
                         gene_idx += 1
+
 
 
 localrules:

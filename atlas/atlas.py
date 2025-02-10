@@ -8,8 +8,8 @@ import click
 
 
 from snakemake.io import load_configfile
-from .make_config import make_config, validate_config
-from .init.atlas_init import run_init, run_init_sra
+from .make_config import validate_config
+from .init.atlas_init import run_init  # , run_init_sra
 
 from .__init__ import __version__
 
@@ -66,7 +66,7 @@ def cli(obj):
 cli.add_command(run_init)
 
 
-cli.add_command(run_init_sra)
+# cli.add_command(run_init_sra)
 
 
 def get_snakefile(file="workflow/Snakefile"):
@@ -121,7 +121,7 @@ def get_snakefile(file="workflow/Snakefile"):
     type=int,
     default=multiprocessing.cpu_count(),
     show_default=True,
-    help="use at most this many jobs in parallel (see cluster submission for mor details).",
+    help="use at most this many jobs in parallel (see cluster submission for more details).",
 )
 @click.option(
     "--max-mem",
@@ -187,6 +187,7 @@ def run_workflow(
         " --rerun-triggers mtime "
         "{jobs} --rerun-incomplete "
         "--configfile '{config_file}' --nolock "
+        " --show-failed-logs "
         " {profile} --use-conda {conda_prefix} {dryrun} "
         " {max_mem_string} "
         " --scheduler greedy "
@@ -244,7 +245,7 @@ def run_download(db_dir, jobs, snakemake_args):
     """
 
     cmd = (
-        "snakemake --snakefile {snakefile} "
+        "snakemake --snakefile {snakefile} download "
         "--jobs {jobs} --rerun-incomplete "
         "--conda-frontend mamba --scheduler greedy "
         "--nolock  --use-conda  --conda-prefix {conda_prefix} "

@@ -33,16 +33,14 @@ min_version("6.1")
 container: "docker://continuumio/miniconda3:4.4.10"
 
 
-
-
-
 wildcard_constraints:
     binner="[A-Za-z]+",
+
 
 include: "rules/sample_table.smk"
 include: "rules/download.smk"  # contains hard coded variables
 include: "rules/qc.smk"
-include: "rules/screen.smk" # expects function get_input_fastq defined in qc
+include: "rules/screen.smk"  # expects function get_input_fastq defined in qc
 include: "rules/assemble.smk"
 include: "rules/binning.smk"
 include: "rules/derep.smk"
@@ -53,6 +51,7 @@ include: "rules/sra.smk"
 include: "rules/gtdbtk.smk"
 include: "rules/cobinning.smk"
 include: "rules/strains.smk"
+include: "rules/patch.smk"
 
 
 CONDAENV = "envs"  # overwrite definition in download.smk
@@ -173,7 +172,7 @@ rule binning:
 
 rule assembly_one_sample:
     input:
-        "{sample}/{sample}_contigs.fasta",
+        get_assembly,
         "{sample}/sequence_alignment/{sample}.bam",
         "{sample}/assembly/contig_stats/postfilter_coverage_stats.txt",
         "{sample}/assembly/contig_stats/final_contig_stats.txt",
@@ -203,9 +202,10 @@ rule qc:
     output:
         touch("finished_QC"),
 
+
 rule screen:
     input:
-        "QC/screen/sketch_comparison.tsv.gz"
+        "QC/screen/sketch_comparison.tsv.gz",
 
 
 # overwrite commands in rules/download.snakefile
@@ -224,23 +224,13 @@ onerror:
 
 for r in workflow.rules:
     if not "mem_mb" in r.resources:
-
-        if "mem" in r.resources:
-            r.resources["mem_mb"] = r.resources["mem"] * 1000
-        else:
-            r.resources["mem_mb"] = config["mem"] * 1000
-
-    # snakemake has a new name for that
-    if not "mem_mib" in r.resources:
-        r.resources["mem_mib"] = r.resources["mem_mb"]
+        # default
+        r.resources["mem_mb"] = config["mem"] * 1000
 
     # add time if ot present. Simple jobs use simple time
 
     if "time_min" not in r.resources:
-        if "time" in r.resources:
-            r.resources["time_min"] = r.resources["time"] * 60
-        else:
-            r.resources["time_min"] = config["runtime"]["default"] * 60
+        r.resources["time_min"] = config["runtime"]["default"] * 60
 
     if not "runtime" in r.resources:
         r.resources["runtime"] = r.resources["time_min"]
