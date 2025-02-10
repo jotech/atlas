@@ -478,6 +478,7 @@ rule eggNOG_annotation:
     threads: config.get("threads", 1)
     resources:
         mem_mb=calculate_mem_eggnog(),
+	time_min=90 * config["runtime"]["long"],
     shadow:
         "minimal"
     conda:
